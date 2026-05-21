@@ -118,3 +118,7 @@ ENV PATH="/opt/data/.local/bin:${PATH}"
 RUN mkdir -p /opt/data
 VOLUME [ "/opt/data" ]
 ENTRYPOINT [ "/usr/bin/tini", "-g", "--", "/opt/hermes/docker/entrypoint.sh" ]
+# Default to persistent gateway mode (LINE/Telegram/etc. webhooks) for headless
+# server deploys (Zeabur). Without args the entrypoint would launch the
+# interactive CLI, which exits immediately in a container and crash-loops.
+CMD [ "gateway", "run" ]
