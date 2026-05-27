@@ -146,6 +146,24 @@ if [ -d "$INSTALL_DIR/skills" ]; then
     python3 "$INSTALL_DIR/tools/skills_sync.py"
 fi
 
+# --- Personal fork: ensure scheduled cron jobs exist after redeploy ---
+#
+# Why: cron job definitions live under $HERMES_HOME/cron/, which is reset on
+# every Zeabur redeploy. Without re-registration the morning briefing push
+# silently disappears.
+#
+# Idempotent: skip if a job with the same name already exists.
+if [ -x /opt/hermes/.venv/bin/hermes ]; then
+    if ! /opt/hermes/.venv/bin/hermes cron list 2>/dev/null | grep -q "Morning Briefing"; then
+        /opt/hermes/.venv/bin/hermes cron create "0 0 * * *" \
+            "Compose and push today's morning briefing using the personal/morning-briefing-push skill. Follow the skill SKILL.md exactly. Output the final LINE message as plain text (no preamble, no code blocks)." \
+            --name "Morning Briefing" \
+            --deliver line \
+            --skill personal/morning-briefing-push \
+            >/dev/null 2>&1 && echo "[entrypoint] registered Morning Briefing cron (0 0 * * * UTC = 08:00 Asia/Taipei)"
+    fi
+fi
+
 # Optionally start `hermes dashboard` as a side-process.
 #
 # Toggled by HERMES_DASHBOARD=1 (also accepts "true"/"yes", case-insensitive).
