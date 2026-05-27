@@ -83,6 +83,45 @@ if [ ! -f "$HERMES_HOME/config.yaml" ]; then
     cp "$INSTALL_DIR/cli-config.yaml.example" "$HERMES_HOME/config.yaml"
 fi
 
+# --- Personal fork: seed selected env vars from process env into .env + config.yaml ---
+#
+# Why: Hermes skills (bash subprocess via terminal tool) and cron jobs read
+# tokens/keys from $HERMES_HOME/.env, not the container's process env.
+# Without this seeding, /opt/data being reset on Zeabur redeploy means every
+# redeploy strips tokens until manually re-added.
+#
+# Idempotent: only adds keys that aren't already present. User edits in .env
+# always win — never overwrites an existing line.
+#
+# Source of truth = Zeabur service variables (process env).
+ENV_FILE="$HERMES_HOME/.env"
+for k in \
+    GITHUB_TOKEN GITHUB_REPO MYTWINS_REPO \
+    ANTHROPIC_API_KEY OPENAI_API_KEY OPENROUTER_API_KEY \
+    HERMES_INFERENCE_PROVIDER HERMES_INFERENCE_MODEL \
+    LINE_HOME_CHANNEL LINE_ALLOWED_USERS LINE_PUBLIC_URL \
+    LINE_CHANNEL_ACCESS_TOKEN LINE_CHANNEL_SECRET LINE_PORT
+do
+    val=$(eval echo "\$$k")
+    if [ -n "$val" ] && ! grep -q "^${k}=" "$ENV_FILE" 2>/dev/null; then
+        echo "${k}=${val}" >> "$ENV_FILE"
+        echo "[entrypoint] seeded ${k} into .env from process env"
+    fi
+done
+
+# Sync config.yaml model/provider/base_url from env (so HERMES_INFERENCE_*
+# survives /opt/data resets without manual sed).
+if [ -n "$HERMES_INFERENCE_MODEL" ]; then
+    sed -i "s|^  default: .*|  default: \"$HERMES_INFERENCE_MODEL\"|" "$HERMES_HOME/config.yaml"
+fi
+if [ -n "$HERMES_INFERENCE_PROVIDER" ]; then
+    sed -i "s|^  provider: .*|  provider: \"$HERMES_INFERENCE_PROVIDER\"|" "$HERMES_HOME/config.yaml"
+    case "$HERMES_INFERENCE_PROVIDER" in
+        anthropic) sed -i "s|^  base_url: .*|  base_url: \"https://api.anthropic.com\"|" "$HERMES_HOME/config.yaml" ;;
+        openrouter) sed -i "s|^  base_url: .*|  base_url: \"https://openrouter.ai/api/v1\"|" "$HERMES_HOME/config.yaml" ;;
+    esac
+fi
+
 # SOUL.md
 if [ ! -f "$HERMES_HOME/SOUL.md" ]; then
     cp "$INSTALL_DIR/docker/SOUL.md" "$HERMES_HOME/SOUL.md"
