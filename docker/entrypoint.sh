@@ -45,6 +45,16 @@ if [ "$(id -u)" = "0" ]; then
             echo "Warning: chown .venv failed (rootless container?) — continuing anyway"
     fi
 
+    # --- Personal fork: defensive chown every boot ---
+    # In addition to the conditional block above (only fires on UID remap or
+    # top-level mis-ownership), force chown -R on every boot so any files
+    # accidentally created as root inside $HERMES_HOME (e.g. by users running
+    # commands via `zeabur service exec` which defaults to uid 0) are
+    # fixed before the gateway runs as the hermes user. Without this, root-
+    # owned auth.json / cron jobs.json / sandboxes/ make hermes' auth and
+    # scheduler subsystems silently break.
+    chown -R hermes:hermes "$HERMES_HOME" 2>/dev/null || true
+
     # Ensure config.yaml is readable by the hermes runtime user even if it was
     # edited on the host after initial ownership setup. Must run here (as root)
     # rather than after the gosu drop, otherwise a non-root caller like
