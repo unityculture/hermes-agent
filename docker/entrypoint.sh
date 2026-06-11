@@ -132,6 +132,13 @@ if [ -n "$HERMES_INFERENCE_PROVIDER" ]; then
     esac
 fi
 
+# Quiet mode for messaging platforms (LINE can't edit messages — every
+# progress update becomes a separate bubble, flooding the chat with
+# intermediate noise). Only the final response should reach the user.
+sed -i "s/^  tool_progress: all/  tool_progress: off/" "$HERMES_HOME/config.yaml"
+sed -i "s/^  interim_assistant_messages: true/  interim_assistant_messages: false/" "$HERMES_HOME/config.yaml"
+sed -i "s/^  background_process_notifications: all/  background_process_notifications: result/" "$HERMES_HOME/config.yaml"
+
 # SOUL.md
 if [ ! -f "$HERMES_HOME/SOUL.md" ]; then
     cp "$INSTALL_DIR/docker/SOUL.md" "$HERMES_HOME/SOUL.md"
