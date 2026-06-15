@@ -129,6 +129,7 @@ if [ -n "$HERMES_INFERENCE_PROVIDER" ]; then
     case "$HERMES_INFERENCE_PROVIDER" in
         anthropic) sed -i "s|^  base_url: .*|  base_url: \"https://api.anthropic.com\"|" "$HERMES_HOME/config.yaml" ;;
         openrouter) sed -i "s|^  base_url: .*|  base_url: \"https://openrouter.ai/api/v1\"|" "$HERMES_HOME/config.yaml" ;;
+        codex) sed -i "s|^  base_url: .*|  base_url: \"\"|" "$HERMES_HOME/config.yaml" ;;  # codex OAuth: endpoint resolved internally (chatgpt.com/backend-api/codex)
     esac
 fi
 
