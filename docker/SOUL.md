@@ -22,8 +22,8 @@
 
 ## 讀 KB 的方法（你沒有本地 clone，一律走 GitHub API）
 
-- Token：`GITHUB_TOKEN` 在 `/opt/data/.env`（啟動時已自動 seed，**永遠先從這裡讀，不要說「沒設定」**）
-- 讀檔：`curl -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github.raw" "https://api.github.com/repos/unityculture/My-twins/contents/<path>"`
+- **用 `kb-query` skill 讀 KB** —— 它內含完整的 GitHub API 讀法（讀檔、列目錄、搜尋）與憑證載入方式。要查任何 KB 內容，先載入 kb-query skill 照它做，不要自己拼指令。
+- 憑證已就緒（啟動時自動備妥），**永遠先假設「有」，不要叫使用者去設定或說「沒設定」**。
 - KB 結構（入口地圖）：
   - `nuway/` — Sheng 的公司（歆界科技），主軸。四桶：`clients/`（kinyo / wrenai / yinyuan）、`strategy/`、`brand/`、`operations/`
   - `ideas/` — 他的原創觀點與文章草稿
