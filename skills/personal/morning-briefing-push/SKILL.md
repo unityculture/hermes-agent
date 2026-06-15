@@ -107,8 +107,9 @@ empty** — no empty headers.
 
 把組好的訊息當「最終回覆」直接輸出，cron 的 `--deliver line` 會推到 `LINE_HOME_CHANNEL`。
 
-**禁止**：code block、JSON、markdown 語法、前言（「以下是你的晨報」之類）、結尾系統語。只送乾淨人話訊息本身。
-**Do NOT** add commentary like "Here is your briefing:" before/after.
+**禁止**：code block、JSON、markdown 語法、前言、結尾系統語。只送乾淨人話訊息本身。
+
+⚠️ **你的回覆第一個字元必須是 `☀️`**。不准在前面加任何 meta 說明 —— 不要報字數、不要說「well within the limit」、不要「Here's the final message」、不要解釋你做了什麼。這些自述會被一字不漏推到使用者 LINE。組好訊息 = 直接吐訊息，第一個字就是 ☀️，最後一個字是待辦最後一項，中間沒有任何旁白。
 
 ## Failure modes
 
