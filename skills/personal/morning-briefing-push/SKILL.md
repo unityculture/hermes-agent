@@ -62,61 +62,52 @@ If 404 / empty → send fallback (see §Failure modes) and stop.
 
 ### 3. Parse and format
 
-Parse JSON with `jq`. Required fields (defined in MyTWINS
-`meta/workflow-raw消化.md` §Step 5.5):
+Parse JSON with `jq`. Fields (briefing.json carries **human-ready** values —
+the digest workflow already converted paths to labels and wrote plain-language
+insight; your job is only layout, not translation):
 
-- `focus_projects: string[]`
-- `top_picks: [{title, source, url, why_now, related_project, raw_path}]`
-- `cross_pollination: [{old_item, current_work, suggestion}]`
-- `new_arrivals: [{title, url, one_liner, raw_path}]`
-- `todos: [{text, project, priority}]`
+- `top_picks: [{title, why_now, related_label, source, url}]`
+- `cross_pollination: [{insight}]`  ← one plain sentence each
+- `new_arrivals: [{title, one_liner}]`
+- `todos: [{text, project_label}]`
 
-Build the LINE message using this template. **Skip sections with empty
-arrays** — do not output empty headers.
+Build the LINE message with this template. **Skip any section whose array is
+empty** — no empty headers.
 
 ```
-☀️ 早安！今天是 <TODAY> (<WEEKDAY_CH>)
+☀️ 早安！6/15（週一）
 
-🔥 今天值得先讀 (<N> 篇)
-
-<for each top_picks[i]>
-<i+1>. <title>
+🔥 今天先讀
+1. <title>（<related_label>）
    <why_now>
-   → <basename(related_project)>
-   <url>
+   <url — see URL rule>
+2. <title>（<related_label>）
+   <why_now>
 
-</for>
-🔗 跨領域連結
+🔗 可以串起來
+• <insight>
 
-<for each cross_pollination[i]>
-• <suggestion>
-  舊：<basename(old_item)>
-  新：<basename(current_work)>
-
-</for>
-📥 昨天新到 (<N> 篇)
-<for each new_arrivals[i]>
+📥 昨天新到
 • <title> — <one_liner>
-</for>
 
-📋 待辦 top <N>
-<for each todos[i]>
-• [<basename_without_ext(project)>] <text>
-</for>
+✅ 待辦
+• <project_label>：<text>
 ```
 
-- `basename(path)` = strip directories; e.g. `projects/nuway/kinyo/顧問服務執行.md`
-  → `顧問服務執行.md`. `basename_without_ext` further strips `.md`.
-- Keep total message under 4500 chars (LINE per-bubble cap 5000).
-- If empty after removing empty sections (all arrays empty): send
-  `☀️ 早安！今天是 <TODAY>\n\n📦 庫存無待辦、無新到、無關聯。今天輕鬆過。`
+### Formatting rules (these fix the past UX complaints — follow exactly)
+
+1. **絕不輸出檔名或路徑**。用 `related_label` / `project_label`（已是人話，如「WrenAI 合約」「個人品牌」）。看到任何 `.md` 出現在你要送的訊息裡 = 錯誤，拿掉。
+2. **URL 規則**：每篇 pick 的 `url` 放在 why_now 下一行，但**只在 url 長度 ≤ 80 字元時才放**；超過（多為 percent-encoded 的長 slug，像 LinkedIn 中文貼文）→ **整條省略**，不要貼那串 %E5%A5 亂碼。new_arrivals 與 todos **一律不放 url**。
+3. **跨領域連結只送 `insight` 那一句人話**。不要「舊：/新：」、不要檔名、不要「backlink」「related_projects」這種 KB 維護術語。
+4. 標題用換行分層，不要 markdown 符號（`#`、`*`、`-` bullet 用 `•`）。
+5. 全文 ≤ 4500 字元；超過先砍 new_arrivals 再砍 todos，保住 top_picks + 跨領域連結。
+6. 全空（所有 array 皆空）：送 `☀️ 早安！6/15（週一）\n\n📦 今天無新素材、無待辦。輕鬆過。`
 
 ### 4. Output
 
-Print the composed message as the agent's final response. Hermes' `--deliver line`
-on the cron job will push it to `LINE_HOME_CHANNEL`.
+把組好的訊息當「最終回覆」直接輸出，cron 的 `--deliver line` 會推到 `LINE_HOME_CHANNEL`。
 
-**Do NOT** wrap in code blocks, JSON, or markdown — output raw text only.
+**禁止**：code block、JSON、markdown 語法、前言（「以下是你的晨報」之類）、結尾系統語。只送乾淨人話訊息本身。
 **Do NOT** add commentary like "Here is your briefing:" before/after.
 
 ## Failure modes

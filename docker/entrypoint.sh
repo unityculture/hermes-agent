@@ -139,6 +139,17 @@ sed -i "s/^  tool_progress: all/  tool_progress: off/" "$HERMES_HOME/config.yaml
 sed -i "s/^  interim_assistant_messages: true/  interim_assistant_messages: false/" "$HERMES_HOME/config.yaml"
 sed -i "s/^  background_process_notifications: all/  background_process_notifications: result/" "$HERMES_HOME/config.yaml"
 
+# Drop the cron delivery wrapper ("Cronjob Response: ... (job_id) ... To stop
+# or manage this job...") — pure system noise in a LINE chat. The skill output
+# is already a clean user-facing message.
+if ! grep -q "^cron:" "$HERMES_HOME/config.yaml"; then
+    printf '\ncron:\n  wrap_response: false\n' >> "$HERMES_HOME/config.yaml"
+elif ! grep -q "wrap_response:" "$HERMES_HOME/config.yaml"; then
+    sed -i "s/^cron:/cron:\n  wrap_response: false/" "$HERMES_HOME/config.yaml"
+else
+    sed -i "s/^  wrap_response: .*/  wrap_response: false/" "$HERMES_HOME/config.yaml"
+fi
+
 # SOUL.md
 if [ ! -f "$HERMES_HOME/SOUL.md" ]; then
     cp "$INSTALL_DIR/docker/SOUL.md" "$HERMES_HOME/SOUL.md"
