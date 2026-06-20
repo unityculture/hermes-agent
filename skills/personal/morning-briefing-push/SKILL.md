@@ -13,11 +13,18 @@ metadata:
 
 # MyTWINS Morning Briefing Push
 
-Daily 08:00 Asia/Taipei push. Compose a briefing from
-`unityculture/My-twins`'s `inbox/digest/<TODAY>-briefing.json` and deliver via
-LINE. Briefing structure is produced by the upstream `/digest` workflow
-(`meta/workflow-raw消化.md` in MyTWINS), this skill is **read-only on the KB**
-and **does not write back**.
+Daily 08:00 Asia/Taipei push. This skill **produces** today's briefing and
+delivers it via LINE — in one run:
+
+1. Scan the MyTWINS KB for what matters today (recently digested items, open
+   todos, steward suggestions).
+2. Assemble `inbox/digest/<TODAY>-briefing.json` per `meta/briefing-schema.md`
+   (human-ready values — labels not paths, plain-language insight).
+3. Commit it to the KB, then format + deliver the LINE message.
+
+This is the producer of `briefing.json` (the old cloud `/digest` that used to
+produce it was retired 2026-06-19). The only KB file this skill writes is
+`inbox/digest/<TODAY>-briefing.json` — it reads broadly but writes nothing else.
 
 ## When to trigger
 
@@ -45,20 +52,49 @@ WEEKDAY_CH=$(TZ=Asia/Taipei date +%u | awk '{
 }')
 ```
 
-### 2. Fetch today's briefing.json
+### 2. Assemble today's briefing.json from the KB
+
+You build `briefing.json`. Read these sources via the GitHub API (use `kb-query`
+skill's read helpers), then fill the schema in `meta/briefing-schema.md`. Every
+value must be **human-ready** — labels not paths, plain sentences not KB jargon.
+
+Sources → fields (best-effort; skip any section that comes up empty):
+
+| Field | Where to look | How to fill |
+|-------|---------------|-------------|
+| `new_arrivals` | `inbox/raw/` files with `status: processed` whose `collected` is within the last ~24h | `title` + `one_liner` (= the file's `one_line_summary`) |
+| `top_picks` | the 1-3 most worth-reading of those new arrivals (or recent high-value ones) | `title`, `why_now` (one plain reason to read it today), `related_label` (the bucket it touches, e.g.「WrenAI 合約」), `source`, `url` |
+| `cross_pollination` | a new arrival whose `concept_tags` overlap an existing KB theme | one plain sentence each — no「舊/新」, no filenames, no「backlink」 |
+| `todos` | open `- [ ]` lines in `**/TODO.md` | `text` + `project_label` (the folder's human name) |
+| `steward` | `inbox/digest/steward-latest.md` | 0-3 plain sentences condensing steward's pending suggestions |
+
+Keep the analysis lightweight — this runs at 08:00, not a deep graph pass. If a
+source is hard to read or empty, leave that array empty rather than guessing.
+
+Then commit it (this is the ONLY file this skill writes):
 
 ```bash
 REPO="${MYTWINS_REPO:-unityculture/My-twins}"
 BRIEFING_PATH="inbox/digest/${TODAY}-briefing.json"
 
-RAW=$(curl -fsS \
+# BRIEFING_JSON = the assembled JSON string (must validate against meta/briefing-schema.md)
+B64_JSON=$(printf '%s' "$BRIEFING_JSON" | base64)
+# include sha if the file already exists today (idempotent re-run)
+SHA=$(curl -fsS -H "Authorization: Bearer ${GITHUB_TOKEN}" -H "Accept: application/vnd.github+json" \
+  "https://api.github.com/repos/${REPO}/contents/${BRIEFING_PATH}" | jq -r '.sha // empty')
+curl -fsS -X PUT \
   -H "Authorization: Bearer ${GITHUB_TOKEN}" \
   -H "Accept: application/vnd.github+json" \
   "https://api.github.com/repos/${REPO}/contents/${BRIEFING_PATH}" \
-  | jq -r '.content' | base64 -d 2>/dev/null)
+  -d "$(jq -nc --arg msg "briefing: ${TODAY} 晨報" --arg b64 "$B64_JSON" --arg sha "$SHA" \
+    'if $sha == "" then {message:$msg, content:$b64, branch:"main"} else {message:$msg, content:$b64, sha:$sha, branch:"main"} end')"
+
+RAW="$BRIEFING_JSON"   # feed straight into step 3 formatting, no re-fetch needed
 ```
 
-If 404 / empty → send fallback (see §Failure modes) and stop.
+If the KB scan yields nothing at all (no arrivals, no todos, no steward note) →
+write an empty-but-valid briefing.json and send the all-empty greeting (step 3
+rule 6).
 
 ### 3. Parse and format
 
@@ -115,18 +151,18 @@ empty** — no empty headers.
 
 | Condition | Action |
 |-----------|--------|
-| `briefing.json` 404 (not produced yet) | Output: `☀️ 早安！今天是 <TODAY>\n\n⚠️ 今日晨報未產（檢查 /digest 排程是否跑完）。` |
+| KB scan yields nothing (no arrivals / todos / steward note) | Write an empty-but-valid briefing.json, then output the all-empty greeting (step 3 rule 6) — this is normal, not an error |
 | GitHub API auth error | Output: `☀️ 早安！\n\n❌ 無法讀取 MyTWINS（GitHub auth 失敗，檢查 GITHUB_TOKEN）。` |
-| `jq` parse error / malformed JSON | Output: `☀️ 早安！\n\n⚠️ 晨報資料格式錯誤，請檢查 inbox/digest/<TODAY>-briefing.json。` |
+| Commit of briefing.json fails (write error) | Still deliver the briefing you assembled from memory — a missed write beats a missed briefing. Output the formatted message anyway |
 
 In all failure modes, DO send a message — silent failure means user thinks
 the bot is dead.
 
 ## Hard rules
 
-- **Read-only on MyTWINS** — this skill does NOT commit to the repo
-  (the inbox-collector skill is the only writer; the /digest workflow is
-  the only KB compiler)
+- **Writes exactly one file** — `inbox/digest/<TODAY>-briefing.json`, nothing
+  else. You read across the KB to build it, but the only commit you make is that
+  one briefing file. No edits to raw, notes, or any other path.
 - **Output is the final LINE message** — no preamble, no JSON, no metadata
 - **Skip empty sections** — don't output an empty header just to keep
   structure; the goal is signal, not template completeness

@@ -15,8 +15,19 @@ metadata:
 
 Save a piece of forwarded content (URL, social post, screenshot) into the
 MyTWINS knowledge base by committing a markdown file to `inbox/raw/` in
-`unityculture/My-twins`. Bot's only job is to land the raw material; a separate
-daily batch (`/digest` workflow in MyTWINS) does the actual ingestion.
+`unityculture/My-twins`, **then digest it inline if it's fetchable text**.
+
+Two phases, by capability (地基原則 — capability decides completion):
+- **Phase A (always): land the raw.** Commit `inbox/raw/inbox-<TS>.md` with
+  `status: unprocessed`. This is the safety net — even if digestion fails, the
+  raw material is saved.
+- **Phase B (text only): digest inline.** If the content is fetchable text
+  (article / blog / readable post), fetch it, write a two-layer summary, flip
+  `status: processed`, and rename the file to its finished slug.
+- **Video / un-fetchable → hand off.** YouTube etc. can't be fetched from the
+  datacenter IP (proven blocked). Leave it `status: unprocessed`; the local
+  Claude Code `/digest` (residential IP, runs every 3h) will pick it up. **Never
+  fake `processed` on content you couldn't actually read.**
 
 ## When to trigger
 
@@ -129,25 +140,64 @@ curl -fsS -X PUT \
     '{message:$msg, content:$b64, branch:"main"}')"
 ```
 
-### 6. Reply to the user
+### 6. Digest inline if it's fetchable text (Phase B)
+
+Decide whether you can actually read the content:
+
+- **Video (YouTube etc.) → STOP here.** Datacenter IP can't pull the transcript
+  (proven). Leave the file `status: unprocessed`, do NOT rename. Skip to step 7
+  and tell the user the local side will digest it.
+- **X / Facebook / login-walled → STOP here.** You only have the user's pasted
+  text / screenshot, not the full piece. Leave `unprocessed`, skip to step 7.
+- **Fetchable text (article / blog / readable post) → digest now.**
+
+To digest:
+
+1. **Fetch the body**: `curl -fsSL --max-time 15 -A "Mozilla/5.0" "$url"`, strip
+   tags to readable text. If fetch fails or the body is too thin to summarize →
+   treat as un-fetchable: leave `unprocessed`, skip to step 7.
+2. **Write two layers** (per `meta/workflow-ingest.md` §兩層摘要 in the KB):
+   - **提醒層 (reminder)**: one-line summary (`one_line_summary`) + 2-5 concept
+     tags (`concept_tags`). This is what the briefing shows.
+   - **完整層 (full)**: 引導式閱讀 — a guided read that **follows the piece's
+     own narrative order**, not condensed themes. Someone who never opens the
+     original should still understand it from this.
+3. **Rewrite the file**: keep the original pasted text / screenshot, set
+   frontmatter `status: processed`, add `one_line_summary` + `concept_tags`,
+   append the 引導式閱讀 body. Then **rename** `inbox/raw/inbox-<TS>.md` →
+   `inbox/raw/<DATE>-<slug>.md` (slug = short kebab-case topic). Renaming via
+   GitHub API = PUT new path + DELETE old path.
+4. **Stay in your lane**: do NOT build cross-file `related_*` backlinks, do NOT
+   upgrade the file into `ideas/` or `references/`, do NOT touch any other file.
+   That whole-graph work is local Claude Code's job. You digest the single file
+   you collected — nothing else.
+
+### 7. Reply to the user
 
 Single LINE bubble, short. Examples:
 
-- `已收 ✓  inbox/raw/inbox-2026-05-21-093215.md`
-- `已收 ✓ （含截圖）  ${RAW_PATH}`
-- `已收 ${N} 筆  最近一筆：${RAW_PATH}`
+- Digested text: `已收並消化 ✓  inbox/raw/2026-06-20-續約率-唯一-kpi.md`
+- Video (handed off): `已收 ✓  ${RAW_PATH}（影片本地會消化）`
+- Login-walled / un-fetchable: `已收 ✓  ${RAW_PATH}（抓不到內文，本地會處理）`
+- Screenshot only: `已收 ✓ （含截圖）  ${RAW_PATH}`
+- Multiple: `已收 ${N} 筆  最近一筆：${RAW_PATH}`
 
-Do NOT summarize the content. Do NOT fetch the article body now. That's the
-job of the `/digest` batch (runs daily 07:00 Asia/Taipei).
+Do NOT paste the 引導式閱讀 body into the LINE reply — it lives in the file. The
+reply is just confirmation.
 
 ## Hard rules
 
-- **Never rewrite** the user's pasted text. Save verbatim. The user may rely on
-  exact wording (e.g., quoting a tweet).
-- **status must be `unprocessed`** — `meta/FRONTMATTER_SPEC.md` enum is strict.
-- **Don't fetch X / Facebook content** — they're login-walled. The user already
-  attached text / screenshot if they want the content captured.
-- **One file per URL** — if a message has 3 URLs, write 3 files.
+- **Never rewrite** the user's pasted text. Save it verbatim alongside any
+  digest you add — the user may rely on exact wording (e.g. quoting a tweet).
+- **`status: processed` only when you actually read and summarized the content.**
+  Couldn't fetch it (video / login wall / fetch failed) → it stays `unprocessed`.
+  This is the 地基原則: no real content, no `processed`.
+- **Don't fetch X / Facebook content** — login-walled. They stay `unprocessed`.
+- **One file per URL** — if a message has 3 URLs, write 3 files (digest each one
+  that's fetchable text).
+- **Stay in your lane** — you write only the raw file you collected (land +
+  inline digest). No cross-file links, no upgrades to `ideas/` / `references/`,
+  no edits elsewhere. That's local Claude Code's job.
 - **Commit directly to `main`** — MyTWINS is a personal KB with no PR flow for
   inbox writes.
 
@@ -157,11 +207,13 @@ job of the `/digest` batch (runs daily 07:00 Asia/Taipei).
   drop the message. Reply: `❌ GITHUB_TOKEN 沒設或權限不足，沒收成功`
 - GitHub API 422 (file already exists, same timestamp collision) → append `-2`,
   `-3` to filename stem and retry
-- Network error fetching og:title → continue with empty title (not a blocker)
+- Fetch / summarize fails on otherwise-text content → keep Phase A's
+  `unprocessed` file (don't lose it), reply `已收 ✓ ${RAW_PATH}（抓不到內文，本地會處理）`
 
-## Reference: downstream digester
+## Reference: the rest of the pipeline
 
-After this skill commits, the MyTWINS `/digest` workflow picks the file up on
-its next 07:00 run, abstracts it, finds related KB items, and writes to
-`inbox/digest/<date>.md`. Full chain documented in
-`meta/workflow-raw消化.md` in the MyTWINS repo.
+You complete the single item you collected (land + inline digest of text). The
+local Claude Code `/digest` (every 3h, residential IP) does what you can't:
+video transcription, cross-file `related_*` backlinks, and upgrading raw into
+`ideas/` / `references/`. The full per-item procedure (the single owner of
+"complete one item") is `meta/workflow-ingest.md` in the MyTWINS repo.
