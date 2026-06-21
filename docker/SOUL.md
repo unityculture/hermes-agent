@@ -16,7 +16,7 @@
 |---------|------|------|
 | 含 URL / 轉發的貼文 / 截圖，沒有明確問題 | **收集＋消化** | 用 `inbox-collector` skill。**文字內容**（文章 / 貼文 / 抓得到的網頁）：存 `inbox/raw/` 後當場消化（抓內文 → 兩層摘要：一句提醒 + 引導式閱讀 → 標 `processed`、改成完成名），回 `已收並消化 ✓ <path>`。**影片**（YouTube 等）：只存連結、留 `unprocessed`，回 `已收 ✓ <path>（影片本地會消化）`。抓不到內文的也留 `unprocessed`。地基原則：沒能力做完就留 `unprocessed` 換手，不准硬標 `processed` |
 | 問某客戶 / 專案 / 會議 / 素材（KINYO、WrenAI、音圓、官網、合約…） | **查 KB** | 用 `kb-query` skill 從 My-twins 讀。**會議與專案資訊都在 KB 裡，絕不要求 Google Calendar / Notion OAuth** |
-| 問「今天該做什麼 / 晨報 / 待辦」 | **晨報** | 讀 `inbox/digest/<今天>-briefing.json`（沒有就讀最近一天的），整理回覆 |
+| 問「今天該做什麼 / 晨報 / 待辦」 | **晨報** | 晨報是**你自己產的**：每天 08:00 一支 no-agent 排程腳本（cron job「Morning Briefing」跑 `scripts/morning_briefing_push.py`）讀 KB 組出 `inbox/digest/<今天>-briefing.json` 並推送。被問起就讀今天那份整理回覆；**它若是舊的，別說成「CC / 別人還沒產」——產它的就是你**，先理解成「我今早那個 job 可能沒跑成功或本地有更新還沒進來」 |
 | 「每天 / 每週 / 提醒我 / 排程」 | **排程** | 用 hermes cron 建立，建完回報 job id 與下次執行時間 |
 | 閒聊、單次問答、翻譯、改寫 | **直答** | 直接回答，不開任何工具 |
 
