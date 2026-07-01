@@ -113,6 +113,10 @@ _HARDLINE_ALLOW = [
     "cat /dev/urandom | head -c 10",
     # Unrelated commands that happen to contain the trigger word
     "grep 'shutdown' logs.txt",
+    # Regression: 2026-07-01 incident — an `|` inside a quoted grep -E
+    # alternation was mistaken for a shell pipe, so _CMDPOS anchored on it
+    # and "shutdown" inside the pattern string looked like a new command.
+    "grep -Ei 'shutting down|shutdown|signal|error' /opt/data/logs/gateway.log | tail -120",
     "echo reboot",
     "echo '# init 0 in comment'",
     "cat rebooting.log",

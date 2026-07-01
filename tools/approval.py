@@ -266,6 +266,26 @@ def _check_sudo_stdin_guard(command: str) -> tuple:
     return (False, None)
 
 
+def _index_inside_quotes(command: str, index: int) -> bool:
+    """Return True if `index` falls inside an open '...' or "..." span.
+
+    The _CMDPOS anchor treats `;`, `&`, `|`, and newline as command
+    separators so it can catch `foo; shutdown` — but those same characters
+    show up inside quoted strings that aren't shell syntax at all, e.g. the
+    `|` in an ERE alternation passed to `grep -E 'shutdown|reboot'`. This is
+    a cheap quote-parity scan (no backslash-escape handling — good enough to
+    tell "are we inside a quoted literal" without a full shell parser).
+    """
+    quote_char = None
+    for ch in command[:index]:
+        if quote_char is None:
+            if ch in ("'", '"'):
+                quote_char = ch
+        elif ch == quote_char:
+            quote_char = None
+    return quote_char is not None
+
+
 def detect_hardline_command(command: str) -> tuple:
     """Check if a command matches the unconditional hardline blocklist.
 
@@ -274,7 +294,9 @@ def detect_hardline_command(command: str) -> tuple:
     """
     normalized = _normalize_command_for_detection(command).lower()
     for pattern_re, description in HARDLINE_PATTERNS_COMPILED:
-        if pattern_re.search(normalized):
+        for match in pattern_re.finditer(normalized):
+            if _index_inside_quotes(normalized, match.start()):
+                continue
             return (True, description)
     return (False, None)
 
