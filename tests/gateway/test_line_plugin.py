@@ -642,3 +642,68 @@ class TestAdapterInit:
         assert asyncio.run(ad.get_chat_info("U123"))["type"] == "dm"
         assert asyncio.run(ad.get_chat_info("C123"))["type"] == "group"
         assert asyncio.run(ad.get_chat_info("R123"))["type"] == "channel"
+
+
+# ---------------------------------------------------------------------------
+# 9. Artifact serving (disk-backed, survives restarts) — /artifacts/<token>/<name>
+# ---------------------------------------------------------------------------
+
+class _FakeRequest:
+    def __init__(self, token, filename):
+        self.match_info = {"token": token, "filename": filename}
+
+
+class TestArtifactServing:
+    """Regression coverage for the 2026-07-01 incident: publish_artifact.py
+    generated links under /artifacts/<token>/<name>, but the gateway never
+    had a route to serve them, so every link 404'd."""
+
+    def _publish(self, tmp_path, *, filename="report.html", ttl_hours=1.0, expired=False, content="hi"):
+        import time as _time
+        token = "tok123"
+        out_dir = tmp_path / token
+        out_dir.mkdir()
+        (out_dir / filename).write_text(content, encoding="utf-8")
+        now = _time.time()
+        expires_at = now - 3600 if expired else now + ttl_hours * 3600
+        (out_dir / ".meta.json").write_text(
+            json.dumps({"filename": filename, "expires_at": expires_at}), encoding="utf-8"
+        )
+        return token
+
+    def _adapter(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN", "t")
+        monkeypatch.setenv("LINE_CHANNEL_SECRET", "s")
+        monkeypatch.setenv("HERMES_ARTIFACTS_DIR", str(tmp_path))
+        from gateway.config import PlatformConfig
+        return LineAdapter(PlatformConfig(enabled=True))
+
+    def test_serves_published_artifact(self, monkeypatch, tmp_path):
+        ad = self._adapter(monkeypatch, tmp_path)
+        token = self._publish(tmp_path, content="<h1>report</h1>")
+        resp = asyncio.run(ad._handle_artifact(_FakeRequest(token, "report.html")))
+        assert resp.status == 200
+
+    def test_unknown_token_404s(self, monkeypatch, tmp_path):
+        ad = self._adapter(monkeypatch, tmp_path)
+        resp = asyncio.run(ad._handle_artifact(_FakeRequest("no-such-token", "report.html")))
+        assert resp.status == 404
+
+    def test_expired_artifact_410s(self, monkeypatch, tmp_path):
+        ad = self._adapter(monkeypatch, tmp_path)
+        token = self._publish(tmp_path, expired=True)
+        resp = asyncio.run(ad._handle_artifact(_FakeRequest(token, "report.html")))
+        assert resp.status == 410
+
+    def test_filename_mismatch_404s(self, monkeypatch, tmp_path):
+        """Requesting a different filename than what was published must not leak it."""
+        ad = self._adapter(monkeypatch, tmp_path)
+        token = self._publish(tmp_path, filename="report.html")
+        resp = asyncio.run(ad._handle_artifact(_FakeRequest(token, "../../etc/passwd")))
+        assert resp.status == 404
+
+    def test_path_traversal_in_token_404s(self, monkeypatch, tmp_path):
+        ad = self._adapter(monkeypatch, tmp_path)
+        self._publish(tmp_path)
+        resp = asyncio.run(ad._handle_artifact(_FakeRequest("../", "report.html")))
+        assert resp.status == 404

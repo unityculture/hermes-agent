@@ -119,6 +119,11 @@ WEBHOOK_BODY_MAX_BYTES = 1_048_576  # 1 MiB — webhooks are tiny JSON
 DEFAULT_WEBHOOK_PORT = 8646
 DEFAULT_WEBHOOK_PATH = "/line/webhook"
 DEFAULT_MEDIA_PATH_PREFIX = "/line/media"
+# Long-lived artifact links (e.g. HTML reports) published via
+# `~/.hermes/scripts/publish_artifact.py` — disk-backed (survives gateway
+# restarts), unlike the in-memory `_media_tokens` table above.
+ARTIFACT_PATH_PREFIX = "/artifacts"
+DEFAULT_ARTIFACTS_DIR = "/opt/data/artifacts"
 
 # Slow-LLM postback button defaults
 DEFAULT_SLOW_RESPONSE_THRESHOLD = 45.0  # seconds; 0 disables
@@ -783,6 +788,11 @@ class LineAdapter(BasePlatformAdapter):
             f"{DEFAULT_MEDIA_PATH_PREFIX}/{{token}}/{{filename}}",
             self._handle_media,
         )
+        # Long-lived artifact links (disk-backed, survives restarts).
+        self._app.router.add_get(
+            f"{ARTIFACT_PATH_PREFIX}/{{token}}/{{filename}}",
+            self._handle_artifact,
+        )
 
         self._runner = web.AppRunner(self._app)
         try:
@@ -1300,6 +1310,47 @@ class LineAdapter(BasePlatformAdapter):
         content_type, _ = mimetypes.guess_type(str(path))
         return web.FileResponse(
             path,
+            headers={"Content-Type": content_type or "application/octet-stream"},
+        )
+
+    async def _handle_artifact(self, request) -> Any:
+        """Serve a file published via `publish_artifact.py` under ``/artifacts``.
+
+        Disk-backed (metadata lives in ``<token>/.meta.json`` next to the
+        file), unlike ``_handle_media``'s in-memory table — links keep
+        working across gateway restarts until their TTL expires.
+        """
+        from aiohttp import web
+
+        artifacts_dir = Path(
+            os.getenv("HERMES_ARTIFACTS_DIR", DEFAULT_ARTIFACTS_DIR)
+        ).resolve()
+
+        token = request.match_info["token"]
+        filename = request.match_info["filename"]
+        token_dir = (artifacts_dir / token).resolve()
+        if not _is_relative_to(token_dir, artifacts_dir):
+            return web.Response(status=404, text="not found")
+
+        meta_path = token_dir / ".meta.json"
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return web.Response(status=404, text="not found")
+
+        if time.time() > float(meta.get("expires_at", 0)):
+            return web.Response(status=410, text="gone")
+
+        if filename != meta.get("filename"):
+            return web.Response(status=404, text="not found")
+
+        file_path = token_dir / filename
+        if not file_path.is_file():
+            return web.Response(status=404, text="not found")
+
+        content_type, _ = mimetypes.guess_type(str(file_path))
+        return web.FileResponse(
+            file_path,
             headers={"Content-Type": content_type or "application/octet-stream"},
         )
 
